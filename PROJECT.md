@@ -1,5 +1,5 @@
 # PROJECT.md
-Last updated: 2026-03-13 (commit 1309563)
+Last updated: 2026-03-13 (commit eabdb6e)
 
 Project: Watson OS
 Repo: ~/projects/watson-os | jeremyknows/watson-os
@@ -17,11 +17,11 @@ See: ~/projects/jhq/
 
 ## Upstream Relationship
 
-- Upstream: https://github.com/builderz-labs/mission-control
-- Upstream remote already configured: `git remote -v` shows it
-- Current state: **3 commits ahead, 213 commits behind upstream**
-- Upstream shipped v2.0.0 on 2026-03-11 (189 commits, major rewrite)
-- We are effectively on a v1.x snapshot with 3 local patches
+- Upstream: https://github.com/builderz-labs/mission-control (v2 baseline)
+- Upstream remote configured: `git remote -v` shows builderz-labs/mission-control
+- Current state: **Fresh clone from v2 with Watson integrations ported**
+- Last synced: 2026-03-13
+- No drift — clean baseline for future updates
 
 ## Constraints
 
@@ -32,12 +32,15 @@ See: ~/projects/jhq/
 
 ## Current State
 
-Repo has only 3 commits total:
-1. `b8d5466` — initial commit (watson-os Next.js dashboard)
-2. `33bf36c` — docs: memory knowledge graph panel
-3. `1309563` — fix: escape apostrophes in JSX (lint)
+Fresh v2 baseline from builderz-labs/mission-control. Watson-specific APIs and panels ported. pnpm install complete. WatsonFlow not yet built.
 
-Server is currently down (not running). Needs `pnpm start` or `pnpm dev` to bring up.
+Key files migrated:
+- APIs: briefing, bus, awareness, discord, watson/*, v5-brief
+- Panels: watson-command-center, watson-intelligence-feed
+- Helpers: briefing-helpers.ts
+- Scripts: seed-activities-from-bus, agent-heartbeat, notification-daemon
+
+Server ready to start with `pnpm dev`.
 
 ## Sprint
 
