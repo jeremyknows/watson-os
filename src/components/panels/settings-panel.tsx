@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
+import { LanguageSwitcher } from '@/components/ui/language-switcher'
 import { useMissionControl } from '@/store'
 import { useNavigateToPanel } from '@/lib/navigation'
 import { SecurityScanCard } from '@/components/onboarding/security-scan-card'
@@ -643,6 +645,9 @@ export function SettingsPanel() {
         </div>
       )}
 
+      {/* Language */}
+      <LanguageSection />
+
       {/* Category tabs */}
       <div className="flex gap-1 border-b border-border pb-px">
         {categories.map(cat => {
@@ -1057,6 +1062,21 @@ function InterfaceModeSelector() {
         ))}
       </div>
       <p className="text-2xs text-muted-foreground/60 mt-2">You can also switch from the sidebar footer.</p>
+    </div>
+  )
+}
+
+function LanguageSection() {
+  const ts = useTranslations('settings')
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-foreground">{ts('language')}</p>
+          <p className="text-2xs text-muted-foreground mt-0.5">{ts('languageDescription')}</p>
+        </div>
+        <LanguageSwitcher />
+      </div>
     </div>
   )
 }

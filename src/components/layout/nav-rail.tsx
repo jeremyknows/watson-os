@@ -2,9 +2,11 @@
 
 import Image from 'next/image'
 import { useState, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { useMissionControl } from '@/store'
 import { useNavigateToPanel, usePrefetchPanel } from '@/lib/navigation'
 import { Button } from '@/components/ui/button'
+import { LanguageSwitcher } from '@/components/ui/language-switcher'
 import { APP_VERSION } from '@/lib/version'
 import { getPluginNavItems } from '@/lib/plugins'
 
@@ -79,6 +81,43 @@ const navGroups: NavGroup[] = [
   },
 ]
 
+// Map nav item IDs to translation keys in the 'nav' namespace
+const navItemTranslationKeys: Record<string, string> = {
+  overview: 'overview',
+  agents: 'agents',
+  tasks: 'tasks',
+  chat: 'chat',
+  channels: 'channels',
+  skills: 'skills',
+  memory: 'memory',
+  activity: 'activity',
+  logs: 'logs',
+  'cost-tracker': 'costTracker',
+  nodes: 'nodes',
+  'exec-approvals': 'approvals',
+  office: 'office',
+  cron: 'cron',
+  webhooks: 'webhooks',
+  alerts: 'alerts',
+  github: 'github',
+  security: 'security',
+  users: 'users',
+  audit: 'audit',
+  'gateway-parent': 'gateway',
+  gateways: 'gateways',
+  'gateway-config': 'config',
+  integrations: 'integrations',
+  debug: 'debug',
+  settings: 'settings',
+}
+
+// Map group IDs to translation keys in the 'nav.group' namespace
+const groupTranslationKeys: Record<string, string> = {
+  observe: 'observe',
+  automate: 'automate',
+  admin: 'admin',
+}
+
 const gatewayOnlyPanels = new Set([
   'gateways', 'gateway-config', 'channels', 'nodes', 'exec-approvals',
   ...getPluginNavItems().filter(pi => pi.gatewayOnly).map(pi => pi.id),
@@ -89,6 +128,18 @@ export function NavRail() {
   const { activeTab, connection, dashboardMode, currentUser, activeTenant, tenants, osUsers, setActiveTenant, fetchTenants, fetchOsUsers, activeProject, projects, setActiveProject, fetchProjects, sidebarExpanded, collapsedGroups, toggleSidebar, toggleGroup, defaultOrgName, interfaceMode, setInterfaceMode } = useMissionControl()
   const navigateToPanel = useNavigateToPanel()
   const prefetchPanel = usePrefetchPanel()
+  const tn = useTranslations('nav')
+  const tc = useTranslations('common')
+
+  // Translate a nav item label using the translation key map
+  function tLabel(id: string, fallback: string): string {
+    const key = navItemTranslationKeys[id]
+    return key ? tn(key) : fallback
+  }
+  function tGroup(id: string, fallback?: string): string | undefined {
+    const key = groupTranslationKeys[id]
+    return key ? tn(`group.${key}`) : fallback
+  }
   const isLocal = dashboardMode === 'local'
   const isAdmin = currentUser?.role === 'admin'
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
@@ -138,7 +189,14 @@ export function NavRail() {
       })
       .filter((i): i is NavItem => i !== null)
   }
-  // Merge plugin nav items into groups by groupId
+  // Translate nav item labels and merge plugin items
+  function translateItems(items: NavItem[]): NavItem[] {
+    return items.map(item => ({
+      ...item,
+      label: tLabel(item.id, item.label),
+      children: item.children ? translateItems(item.children) : undefined,
+    }))
+  }
   const mergedGroups = navGroups.map(g => {
     const pluginItems = getPluginNavItems()
       .filter(pi => pi.groupId === g.id)
@@ -148,8 +206,8 @@ export function NavRail() {
         icon: pi.icon ? <span>{pi.icon}</span> : <PluginIcon />,
         priority: false,
       } as NavItem))
-    if (pluginItems.length === 0) return g
-    return { ...g, items: [...g.items, ...pluginItems] }
+    const items = translateItems(pluginItems.length > 0 ? [...g.items, ...pluginItems] : g.items)
+    return { ...g, label: tGroup(g.id, g.label), items }
   })
 
   const filteredGroups = mergedGroups
@@ -203,7 +261,7 @@ export function NavRail() {
             variant="ghost"
             size="icon-xs"
             onClick={toggleSidebar}
-            title={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={sidebarExpanded ? tn('collapseSidebar') : tn('expandSidebar')}
             className="shrink-0"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -384,6 +442,18 @@ export function NavRail() {
             </a>
           </div>
         )}
+
+        {/* Language switcher */}
+        <div className={`shrink-0 border-t border-border ${sidebarExpanded ? 'px-3 py-2' : 'flex justify-center py-2'}`}>
+          {sidebarExpanded ? (
+            <div className="flex items-center gap-2">
+              <span className="text-2xs text-muted-foreground shrink-0">{tc('language')}</span>
+              <LanguageSwitcher compact />
+            </div>
+          ) : (
+            <LanguageSwitcher compact />
+          )}
+        </div>
 
         {/* Context switcher (profile-style, bottom of sidebar) */}
         <ContextSwitcher
