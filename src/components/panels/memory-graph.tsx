@@ -264,8 +264,6 @@ export function MemoryGraph() {
   // Auto-fit the graph after layout settles (nodes change)
   useEffect(() => {
     if (!graphNodes.length) return
-    // reagraph force layout needs time to settle before fitNodesInView works
-    // With 2000+ nodes, the simulation takes longer to converge
     const timers = [500, 1500, 3000, 5000].map(ms =>
       setTimeout(() => graphRef.current?.fitNodesInView(), ms)
     )

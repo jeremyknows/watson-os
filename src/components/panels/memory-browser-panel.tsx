@@ -596,9 +596,9 @@ export function MemoryBrowserPanel() {
         )}
 
         {/* Main content */}
-        <div className="flex-1 min-w-0 flex flex-col bg-[hsl(var(--surface-0))]">
+        <div className="flex-1 min-w-0 flex flex-col">
           {activeView === 'graph' && !isLocal ? (
-            <div style={{ height: 'calc(100vh - 6rem)', position: 'relative' }}><MemoryGraph /></div>
+            <div style={{ height: 'calc(100vh - 6rem)', position: 'relative', overflow: 'hidden' }}><MemoryGraph /></div>
           ) : activeView === 'health' ? (
             <div className="flex-1 overflow-auto p-6"><HealthView report={healthReport} isLoading={isLoadingHealth} onRefresh={loadHealth} /></div>
           ) : activeView === 'pipeline' ? (
