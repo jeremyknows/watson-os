@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
 import { useMissionControl, Agent } from '@/store'
 import { buildOfficeLayout } from '@/lib/office-layout'
+import { getAgentVisuals } from '@/lib/agent-visuals'
+import { SpeechBubble } from '@/components/panels/office/speech-bubble'
 
 type ViewMode = 'office' | 'org-chart'
 type OrgSegmentMode = 'category' | 'role' | 'status'
@@ -124,6 +126,7 @@ interface PersistedOfficePrefs {
   showSidebar: boolean
   showMinimap: boolean
   showEvents: boolean
+  showBubbleText: boolean
   roomLayout: MapRoom[]
   mapProps: MapProp[]
 }
@@ -477,6 +480,7 @@ export function OfficePanel() {
   const [showFlightDeckModal, setShowFlightDeckModal] = useState(false)
   const [flightDeckDownloadUrl, setFlightDeckDownloadUrl] = useState('https://flightdeck.example.com/download')
   const [flightDeckLaunching, setFlightDeckLaunching] = useState(false)
+  const [wakeLoading, setWakeLoading] = useState(false)
   const [launchToast, setLaunchToast] = useState<LaunchToast | null>(null)
   const [selectedHotspot, setSelectedHotspot] = useState<OfficeHotspot | null>(null)
   const [agentActionOverrides, setAgentActionOverrides] = useState<Map<number, OfficeAction>>(new Map())
@@ -486,6 +490,7 @@ export function OfficePanel() {
   const [showSidebar, setShowSidebar] = useState(true)
   const [showMinimap, setShowMinimap] = useState(true)
   const [showEvents, setShowEvents] = useState(true)
+  const [showBubbleText, setShowBubbleText] = useState(false)
   const [localSessionFilter, setLocalSessionFilter] = useState<'running' | 'not-running'>('running')
   const [loading, setLoading] = useState(true)
   const [localBootstrapping, setLocalBootstrapping] = useState(isLocalMode)
@@ -507,6 +512,9 @@ export function OfficePanel() {
   const movingWorkersRef = useRef<MovingWorker[]>([])
   const renderedWorkersRef = useRef<Array<{ agent: Agent; x: number; y: number; zoneLabel: string; seatLabel: string; isMoving: boolean; direction: { dx: number; dy: number }; variant: WorkerVariant }>>([])
   const [transitioningAgentIds, setTransitioningAgentIds] = useState<Set<number>>(new Set())
+  const [spawnAnimatingIds, setSpawnAnimatingIds] = useState<Set<number>>(new Set())
+  const [despawnAnimatingIds, setDespawnAnimatingIds] = useState<Set<number>>(new Set())
+  const spawnTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const previousSeatMapRef = useRef<Map<number, SeatPosition>>(new Map())
   const [movingWorkers, setMovingWorkers] = useState<MovingWorker[]>([])
 
@@ -826,6 +834,7 @@ export function OfficePanel() {
       setShowSidebar(prefs.showSidebar !== false)
       setShowMinimap(prefs.showMinimap !== false)
       setShowEvents(prefs.showEvents !== false)
+      setShowBubbleText(prefs.showBubbleText === true)
       if (Array.isArray(prefs.roomLayout) && prefs.roomLayout.length > 0) {
         setRoomLayoutState(prefs.roomLayout.map((room) => ({ ...room })))
       }
@@ -850,6 +859,7 @@ export function OfficePanel() {
       showSidebar,
       showMinimap,
       showEvents,
+      showBubbleText,
       roomLayout: roomLayoutState,
       mapProps: mapPropsState,
     }
@@ -865,6 +875,7 @@ export function OfficePanel() {
     mapZoom,
     localSessionFilter,
     roomLayoutState,
+    showBubbleText,
     showEvents,
     showMinimap,
     showSidebar,
@@ -1059,7 +1070,7 @@ export function OfficePanel() {
         id: `${agent.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         agentId: agent.id,
         initials: getInitials(agent.name),
-        colorClass: hashColor(agent.name),
+        colorClass: getAgentVisuals(agent.name).bgClass,
         startX,
         startY,
         endX,
@@ -1112,6 +1123,36 @@ export function OfficePanel() {
         transitionTimersRef.current.delete(id)
       }, 2200)
       transitionTimersRef.current.set(id, timer)
+    }
+
+    // Detect spawn (offline->online) and despawn (online->offline) transitions
+    for (const agent of displayAgents) {
+      const prevStatus = prev.get(agent.id)
+      if (!prevStatus) continue
+      const isNowOnline = agent.status !== 'offline'
+      const wasOnline = prevStatus !== 'offline'
+
+      if (isNowOnline && !wasOnline) {
+        // Spawn: offline -> online
+        setSpawnAnimatingIds((current) => { const s = new Set(current); s.add(agent.id); return s })
+        const existingTimer = spawnTimersRef.current.get(agent.id)
+        if (existingTimer) clearTimeout(existingTimer)
+        const timer = setTimeout(() => {
+          setSpawnAnimatingIds((current) => { const s = new Set(current); s.delete(agent.id); return s })
+          spawnTimersRef.current.delete(agent.id)
+        }, 600)
+        spawnTimersRef.current.set(agent.id, timer)
+      } else if (!isNowOnline && wasOnline) {
+        // Despawn: online -> offline
+        setDespawnAnimatingIds((current) => { const s = new Set(current); s.add(agent.id); return s })
+        const existingTimer = spawnTimersRef.current.get(agent.id)
+        if (existingTimer) clearTimeout(existingTimer)
+        const timer = setTimeout(() => {
+          setDespawnAnimatingIds((current) => { const s = new Set(current); s.delete(agent.id); return s })
+          spawnTimersRef.current.delete(agent.id)
+        }, 800)
+        spawnTimersRef.current.set(agent.id, timer)
+      }
     }
   }, [displayAgents])
 
@@ -1223,17 +1264,36 @@ export function OfficePanel() {
   useEffect(() => {
     const timers = transitionTimersRef.current
     const roamTimers = roamReturnTimersRef.current
+    const spawnTimers = spawnTimersRef.current
     return () => {
       for (const timer of timers.values()) clearTimeout(timer)
       timers.clear()
       for (const timer of roamTimers.values()) clearTimeout(timer)
       roamTimers.clear()
+      for (const timer of spawnTimers.values()) clearTimeout(timer)
+      spawnTimers.clear()
       if (launchToastTimerRef.current) {
         clearTimeout(launchToastTimerRef.current)
         launchToastTimerRef.current = null
       }
     }
   }, [])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+      const num = Number(e.key)
+      if (num >= 1 && num <= 8) {
+        const idx = num - 1
+        if (idx < visibleDisplayAgents.length) {
+          setSelectedAgent(visibleDisplayAgents[idx])
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [visibleDisplayAgents])
 
   const showLaunchToast = (toast: LaunchToast) => {
     setLaunchToast(toast)
@@ -1279,6 +1339,28 @@ export function OfficePanel() {
     }
     pushOfficeEvent({ kind: 'action', severity: 'warn', message: `${agent.name} requested a break.` })
   }, [enqueueMovement, pushOfficeEvent])
+
+  const wakeAgent = useCallback(async (agent: Agent) => {
+    setWakeLoading(true)
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(String(agent.id))}/wake`, {
+        method: 'POST',
+      })
+      if (res.ok) {
+        pushOfficeEvent({ kind: 'action', severity: 'good', message: `${agent.name} wake signal sent.` })
+      } else {
+        pushOfficeEvent({ kind: 'action', severity: 'warn', message: `${agent.name} wake failed (${res.status}).` })
+      }
+    } catch {
+      pushOfficeEvent({ kind: 'action', severity: 'warn', message: `${agent.name} wake request error.` })
+    } finally {
+      setWakeLoading(false)
+    }
+  }, [pushOfficeEvent])
+
+  const navigateToPanel = useCallback((panel: string, query?: string) => {
+    window.location.href = query ? `/${panel}?${query}` : `/${panel}`
+  }, [])
 
   const openFlightDeck = async (agent: Agent) => {
     setFlightDeckLaunching(true)
@@ -1631,7 +1713,7 @@ export function OfficePanel() {
                       : 'bg-black/20 border border-white/5 hover:bg-black/35'
                   }`}
                 >
-                  <span className={`w-6 h-6 rounded ${hashColor(agent.name)} flex items-center justify-center text-[10px] font-bold text-white`}>
+                  <span className={`w-6 h-6 rounded ${getAgentVisuals(agent.name).bgClass} flex items-center justify-center text-[10px] font-bold text-white`}>
                     {getInitials(agent.name)}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -1767,6 +1849,7 @@ export function OfficePanel() {
               <Button variant="ghost" size="xs" onClick={() => setShowSidebar((v) => !v)} className="h-auto px-1.5 py-0.5 text-[10px] font-mono hover:bg-void-cyan/10">{showSidebar ? 'Hide Crew' : 'Show Crew'}</Button>
               <Button variant="ghost" size="xs" onClick={() => setShowMinimap((v) => !v)} className="h-auto px-1.5 py-0.5 text-[10px] font-mono hover:bg-void-cyan/10">{showMinimap ? 'Hide Radar' : 'Show Radar'}</Button>
               <Button variant="ghost" size="xs" onClick={() => setShowEvents((v) => !v)} className="h-auto px-1.5 py-0.5 text-[10px] font-mono hover:bg-void-cyan/10">{showEvents ? 'Hide Log' : 'Show Log'}</Button>
+              <Button variant="ghost" size="xs" onClick={() => setShowBubbleText((v) => !v)} className="h-auto px-1.5 py-0.5 text-[10px] font-mono hover:bg-void-cyan/10">{showBubbleText ? 'Bubbles: On' : 'Bubbles: Off'}</Button>
               <Button variant="ghost" size="xs" onClick={resetOfficeLayout} className="h-auto px-1.5 py-0.5 text-[10px] font-mono hover:bg-void-cyan/10">Reset Layout</Button>
             </div>
 
@@ -1915,7 +1998,16 @@ export function OfficePanel() {
               </svg>
 
               {renderedWorkers.map(({ agent, x, y, zoneLabel, seatLabel, isMoving, direction }) => (
-                <div key={agent.id}>
+                <div
+                  key={agent.id}
+                  style={{
+                    animation: spawnAnimatingIds.has(agent.id)
+                      ? 'mcAgentSpawn 600ms ease-out forwards'
+                      : despawnAnimatingIds.has(agent.id)
+                        ? 'mcAgentDespawn 800ms ease-in forwards'
+                        : undefined,
+                  }}
+                >
                   <div
                     className="absolute -translate-x-1/2 pointer-events-none"
                     style={{ left: `${x}%`, top: `calc(${y}% - 14px)` }}
@@ -1962,6 +2054,55 @@ export function OfficePanel() {
                     </div>
                   </div>
 
+                  {/* Themed desk props */}
+                  {getAgentVisuals(agent.name).deskProps.map((prop, propIdx) => {
+                    const propStyles: Record<string, { w: string; h: string; bg: string; extra?: string; rounded?: string }> = {
+                      bookshelf:       { w: '4px',  h: '14px', bg: 'bg-amber-700/70',   extra: 'border border-amber-600/40' },
+                      lamp:            { w: '3px',  h: '10px', bg: 'bg-yellow-300/80',   extra: 'shadow-[0_0_6px_rgba(250,204,21,0.5)]' },
+                      'inbox-tray':    { w: '8px',  h: '5px',  bg: 'bg-blue-400/60',     extra: 'border border-blue-300/30' },
+                      'brand-banner':  { w: '16px', h: '3px',  bg: 'bg-pink-400/60',     extra: 'border border-pink-300/30' },
+                      globe:           { w: '6px',  h: '6px',  bg: 'bg-teal-400/60',     rounded: 'rounded-full' },
+                      'map-poster':    { w: '10px', h: '7px',  bg: 'bg-teal-500/50',     extra: 'border border-teal-400/30' },
+                      'tool-rack':     { w: '4px',  h: '14px', bg: 'bg-green-600/60',    extra: 'border border-green-500/30' },
+                      'second-monitor':{ w: '8px',  h: '5px',  bg: 'bg-green-400/50',    extra: 'shadow-[0_0_4px_rgba(74,222,128,0.4)]' },
+                      mushroom:        { w: '5px',  h: '5px',  bg: 'bg-yellow-400/60',   rounded: 'rounded-full' },
+                      'potted-plant':  { w: '6px',  h: '8px',  bg: 'bg-emerald-500/50',  extra: 'border border-emerald-400/30' },
+                      rug:             { w: '20px', h: '3px',  bg: 'bg-indigo-500/40',   extra: 'border border-indigo-400/20' },
+                      'plant-left':    { w: '5px',  h: '7px',  bg: 'bg-emerald-500/50',  extra: 'border border-emerald-400/30' },
+                      'plant-right':   { w: '5px',  h: '7px',  bg: 'bg-emerald-500/50',  extra: 'border border-emerald-400/30' },
+                      camera:          { w: '7px',  h: '6px',  bg: 'bg-orange-400/60',   extra: 'border border-orange-300/40' },
+                      microphone:      { w: '3px',  h: '10px', bg: 'bg-orange-300/70',   extra: 'shadow-[0_0_4px_rgba(251,146,60,0.4)]' },
+                      radio:           { w: '6px',  h: '4px',  bg: 'bg-blue-400/60',     extra: 'border border-blue-300/30' },
+                      clipboard:       { w: '6px',  h: '8px',  bg: 'bg-blue-300/50',     extra: 'border border-blue-200/30' },
+                      cushion:         { w: '8px',  h: '5px',  bg: 'bg-pink-300/50',     rounded: 'rounded-md' },
+                      mug:             { w: '4px',  h: '5px',  bg: 'bg-pink-400/60',     rounded: 'rounded-sm' },
+                      binoculars:      { w: '6px',  h: '5px',  bg: 'bg-sky-400/60',      extra: 'border border-sky-300/30' },
+                      map:             { w: '10px', h: '7px',  bg: 'bg-sky-500/40',      extra: 'border border-sky-400/20' },
+                      toolbox:         { w: '8px',  h: '6px',  bg: 'bg-green-500/60',    extra: 'border border-green-400/30' },
+                      blueprints:      { w: '10px', h: '7px',  bg: 'bg-green-400/40',    extra: 'border border-green-300/20' },
+                      'compass-rose':  { w: '6px',  h: '6px',  bg: 'bg-teal-300/60',     rounded: 'rounded-full' },
+                      'crystal-ball':  { w: '6px',  h: '6px',  bg: 'bg-violet-400/60',   rounded: 'rounded-full', extra: 'shadow-[0_0_6px_rgba(167,139,250,0.4)]' },
+                      scroll:          { w: '8px',  h: '4px',  bg: 'bg-yellow-300/50',   extra: 'border border-yellow-200/30' },
+                      monitor:         { w: '8px',  h: '5px',  bg: 'bg-slate-400/50',    extra: 'shadow-[0_0_3px_rgba(148,163,184,0.3)]' },
+                    }
+                    const style = propStyles[prop]
+                    if (!style) return null
+                    const offsetX = -20 + propIdx * 14
+                    const offsetY = -62 - propIdx * 3
+                    return (
+                      <div
+                        key={`${agent.id}-prop-${propIdx}`}
+                        className={`absolute pointer-events-none ${style.bg} ${style.rounded || 'rounded-sm'} ${style.extra || ''}`}
+                        style={{
+                          left: `calc(${x}% + ${offsetX}px)`,
+                          top: `calc(${y}% + ${offsetY}px)`,
+                          width: style.w,
+                          height: style.h,
+                        }}
+                      />
+                    )
+                  })}
+
                   <Button
                     variant="ghost"
                     onClick={() => setSelectedAgent(agent)}
@@ -1971,6 +2112,16 @@ export function OfficePanel() {
                     <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/70 border border-white/10 text-white text-[11px] px-2 py-0.5 shadow-[0_0_12px_rgba(0,0,0,0.4)]">
                       <span className={`inline-block w-2 h-2 rounded-full ${statusDot[agent.status]} mr-1`} />
                       {agent.name}
+                    </div>
+                    <div className="absolute -top-16 left-1/2 -translate-x-1/2 pointer-events-none">
+                      <div className="relative">
+                        <SpeechBubble
+                          status={agent.status}
+                          lastActivity={agent.last_activity}
+                          showText={showBubbleText}
+                          agentColor={getAgentVisuals(agent.name).color}
+                        />
+                      </div>
                     </div>
                     <div className="absolute -top-12 left-1/2 -translate-x-1/2 text-sm">
                       <span className={`${agent.status === 'busy' ? 'animate-bounce' : 'animate-pulse'}`}>{getStatusEmote(agent.status)}</span>
@@ -1989,12 +2140,12 @@ export function OfficePanel() {
                             return `${xPct}% ${yPct}%`
                           })(),
                           imageRendering: 'pixelated',
-                          filter: themePalette.spriteFilter,
+                          filter: [themePalette.spriteFilter, getAgentVisuals(agent.name).spriteFilter].filter(f => f && f !== 'none').join(' ') || 'none',
                           transform: isMoving && Math.abs(direction.dx) > Math.abs(direction.dy) && direction.dx < 0 ? 'scaleX(-1)' : undefined,
                           transformOrigin: 'center',
                         }}
                       />
-                      <div className={`absolute left-[8px] top-[14px] w-4 h-3 ${hashColor(agent.name)} border border-black/60`} />
+                      <div className={`absolute left-[8px] top-[14px] w-4 h-3 ${getAgentVisuals(agent.name).bgClass} border border-black/60`} />
                     </div>
                     {!isMoving && <div className="text-[9px] text-slate-300 font-mono mt-0.5">#{seatLabel}</div>}
                   </Button>
@@ -2054,7 +2205,7 @@ export function OfficePanel() {
                   <Button
                     key={`mini-worker-${worker.agent.id}`}
                     variant="ghost"
-                    className={`absolute w-2.5 h-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 ${hashColor(worker.agent.name)} border border-black/40 h-auto p-0 min-w-0 hover:bg-transparent`}
+                    className={`absolute w-2.5 h-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 ${getAgentVisuals(worker.agent.name).bgClass} border border-black/40 h-auto p-0 min-w-0 hover:bg-transparent`}
                     style={{ left: `${worker.x}%`, top: `${worker.y}%` }}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -2188,7 +2339,7 @@ export function OfficePanel() {
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all hover:scale-[1.02] ${statusGlow[agent.status]}`}
                     style={{ background: 'var(--card)' }}
                   >
-                    <div className={`w-8 h-8 rounded-full ${hashColor(agent.name)} flex items-center justify-center text-white font-bold text-xs`}>
+                    <div className={`w-8 h-8 rounded-full ${getAgentVisuals(agent.name).bgClass} flex items-center justify-center text-white font-bold text-xs`}>
                       {getInitials(agent.name)}
                     </div>
                     <div>
@@ -2211,7 +2362,7 @@ export function OfficePanel() {
           <div className="bg-card border border-border rounded-lg max-w-sm w-full p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-14 h-14 rounded-full ${hashColor(selectedAgent.name)} flex items-center justify-center text-white font-bold text-lg ring-2 ring-offset-2 ring-offset-card ${selectedAgent.status === 'busy' ? 'ring-yellow-500' : selectedAgent.status === 'idle' ? 'ring-green-500' : selectedAgent.status === 'error' ? 'ring-red-500' : 'ring-gray-600'}`}>
+                <div className={`w-14 h-14 rounded-full ${getAgentVisuals(selectedAgent.name).bgClass} flex items-center justify-center text-white font-bold text-lg ring-2 ring-offset-2 ring-offset-card ${selectedAgent.status === 'busy' ? 'ring-yellow-500' : selectedAgent.status === 'idle' ? 'ring-green-500' : selectedAgent.status === 'error' ? 'ring-red-500' : 'ring-gray-600'}`}>
                   {getInitials(selectedAgent.name)}
                 </div>
                 <div>
@@ -2264,7 +2415,39 @@ export function OfficePanel() {
               )}
 
               <div className="pt-1">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Quick Actions</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Operations</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => wakeAgent(selectedAgent)}
+                    disabled={wakeLoading || !selectedAgent.session_key}
+                    className="text-[11px]"
+                  >
+                    {wakeLoading ? 'Waking...' : 'Wake'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigateToPanel('chat', selectedAgent.session_key ? `agent=${encodeURIComponent(selectedAgent.session_key)}` : undefined)}
+                    disabled={!selectedAgent.session_key}
+                    className="text-[11px]"
+                  >
+                    Session
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigateToPanel('tasks')}
+                    className="text-[11px]"
+                  >
+                    Tasks
+                  </Button>
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Office Actions</div>
                 <div className="grid grid-cols-3 gap-1.5">
                   <Button
                     variant="outline"
@@ -2403,6 +2586,23 @@ export function OfficePanel() {
           0% { opacity: 0.25; transform: scale(0.9); }
           50% { opacity: 1; transform: scale(1.15); }
           100% { opacity: 0.25; transform: scale(0.9); }
+        }
+        @keyframes mcBubbleFadeIn {
+          0% { opacity: 0; transform: translateY(4px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes mcAgentSpawn {
+          0% { opacity: 0; transform: scale(0.8); }
+          100% { opacity: 1; transform: scale(1.0); }
+        }
+        @keyframes mcAgentDespawn {
+          0% { opacity: 1; filter: grayscale(0); }
+          100% { opacity: 0.3; filter: grayscale(1); }
+        }
+        @keyframes mcStatusPulse {
+          0% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(1.08); }
+          100% { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>
