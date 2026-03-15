@@ -508,6 +508,9 @@ export function OfficePanel() {
   const movingWorkersRef = useRef<MovingWorker[]>([])
   const renderedWorkersRef = useRef<Array<{ agent: Agent; x: number; y: number; zoneLabel: string; seatLabel: string; isMoving: boolean; direction: { dx: number; dy: number }; variant: WorkerVariant }>>([])
   const [transitioningAgentIds, setTransitioningAgentIds] = useState<Set<number>>(new Set())
+  const [spawnAnimatingIds, setSpawnAnimatingIds] = useState<Set<number>>(new Set())
+  const [despawnAnimatingIds, setDespawnAnimatingIds] = useState<Set<number>>(new Set())
+  const spawnTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
   const previousSeatMapRef = useRef<Map<number, SeatPosition>>(new Map())
   const [movingWorkers, setMovingWorkers] = useState<MovingWorker[]>([])
 
@@ -1114,6 +1117,36 @@ export function OfficePanel() {
       }, 2200)
       transitionTimersRef.current.set(id, timer)
     }
+
+    // Detect spawn (offline->online) and despawn (online->offline) transitions
+    for (const agent of displayAgents) {
+      const prevStatus = prev.get(agent.id)
+      if (!prevStatus) continue
+      const isNowOnline = agent.status !== 'offline'
+      const wasOnline = prevStatus !== 'offline'
+
+      if (isNowOnline && !wasOnline) {
+        // Spawn: offline -> online
+        setSpawnAnimatingIds((current) => { const s = new Set(current); s.add(agent.id); return s })
+        const existingTimer = spawnTimersRef.current.get(agent.id)
+        if (existingTimer) clearTimeout(existingTimer)
+        const timer = setTimeout(() => {
+          setSpawnAnimatingIds((current) => { const s = new Set(current); s.delete(agent.id); return s })
+          spawnTimersRef.current.delete(agent.id)
+        }, 600)
+        spawnTimersRef.current.set(agent.id, timer)
+      } else if (!isNowOnline && wasOnline) {
+        // Despawn: online -> offline
+        setDespawnAnimatingIds((current) => { const s = new Set(current); s.add(agent.id); return s })
+        const existingTimer = spawnTimersRef.current.get(agent.id)
+        if (existingTimer) clearTimeout(existingTimer)
+        const timer = setTimeout(() => {
+          setDespawnAnimatingIds((current) => { const s = new Set(current); s.delete(agent.id); return s })
+          spawnTimersRef.current.delete(agent.id)
+        }, 800)
+        spawnTimersRef.current.set(agent.id, timer)
+      }
+    }
   }, [displayAgents])
 
   useEffect(() => {
@@ -1224,11 +1257,14 @@ export function OfficePanel() {
   useEffect(() => {
     const timers = transitionTimersRef.current
     const roamTimers = roamReturnTimersRef.current
+    const spawnTimers = spawnTimersRef.current
     return () => {
       for (const timer of timers.values()) clearTimeout(timer)
       timers.clear()
       for (const timer of roamTimers.values()) clearTimeout(timer)
       roamTimers.clear()
+      for (const timer of spawnTimers.values()) clearTimeout(timer)
+      spawnTimers.clear()
       if (launchToastTimerRef.current) {
         clearTimeout(launchToastTimerRef.current)
         launchToastTimerRef.current = null
@@ -1916,7 +1952,16 @@ export function OfficePanel() {
               </svg>
 
               {renderedWorkers.map(({ agent, x, y, zoneLabel, seatLabel, isMoving, direction }) => (
-                <div key={agent.id}>
+                <div
+                  key={agent.id}
+                  style={{
+                    animation: spawnAnimatingIds.has(agent.id)
+                      ? 'mcAgentSpawn 600ms ease-out forwards'
+                      : despawnAnimatingIds.has(agent.id)
+                        ? 'mcAgentDespawn 800ms ease-in forwards'
+                        : undefined,
+                  }}
+                >
                   <div
                     className="absolute -translate-x-1/2 pointer-events-none"
                     style={{ left: `${x}%`, top: `calc(${y}% - 14px)` }}
@@ -2439,6 +2484,19 @@ export function OfficePanel() {
           0% { opacity: 0.25; transform: scale(0.9); }
           50% { opacity: 1; transform: scale(1.15); }
           100% { opacity: 0.25; transform: scale(0.9); }
+        }
+        @keyframes mcAgentSpawn {
+          0% { opacity: 0; transform: scale(0.8); }
+          100% { opacity: 1; transform: scale(1.0); }
+        }
+        @keyframes mcAgentDespawn {
+          0% { opacity: 1; filter: grayscale(0); }
+          100% { opacity: 0.3; filter: grayscale(1); }
+        }
+        @keyframes mcStatusPulse {
+          0% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(1.08); }
+          100% { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>
