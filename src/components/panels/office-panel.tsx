@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Loader } from '@/components/ui/loader'
 import { useMissionControl, Agent } from '@/store'
 import { buildOfficeLayout } from '@/lib/office-layout'
+import { getAgentVisuals } from '@/lib/agent-visuals'
 
 type ViewMode = 'office' | 'org-chart'
 type OrgSegmentMode = 'category' | 'role' | 'status'
@@ -1059,7 +1060,7 @@ export function OfficePanel() {
         id: `${agent.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         agentId: agent.id,
         initials: getInitials(agent.name),
-        colorClass: hashColor(agent.name),
+        colorClass: getAgentVisuals(agent.name).bgClass,
         startX,
         startY,
         endX,
@@ -1631,7 +1632,7 @@ export function OfficePanel() {
                       : 'bg-black/20 border border-white/5 hover:bg-black/35'
                   }`}
                 >
-                  <span className={`w-6 h-6 rounded ${hashColor(agent.name)} flex items-center justify-center text-[10px] font-bold text-white`}>
+                  <span className={`w-6 h-6 rounded ${getAgentVisuals(agent.name).bgClass} flex items-center justify-center text-[10px] font-bold text-white`}>
                     {getInitials(agent.name)}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -1989,12 +1990,12 @@ export function OfficePanel() {
                             return `${xPct}% ${yPct}%`
                           })(),
                           imageRendering: 'pixelated',
-                          filter: themePalette.spriteFilter,
+                          filter: [themePalette.spriteFilter, getAgentVisuals(agent.name).spriteFilter].filter(f => f && f !== 'none').join(' ') || 'none',
                           transform: isMoving && Math.abs(direction.dx) > Math.abs(direction.dy) && direction.dx < 0 ? 'scaleX(-1)' : undefined,
                           transformOrigin: 'center',
                         }}
                       />
-                      <div className={`absolute left-[8px] top-[14px] w-4 h-3 ${hashColor(agent.name)} border border-black/60`} />
+                      <div className={`absolute left-[8px] top-[14px] w-4 h-3 ${getAgentVisuals(agent.name).bgClass} border border-black/60`} />
                     </div>
                     {!isMoving && <div className="text-[9px] text-slate-300 font-mono mt-0.5">#{seatLabel}</div>}
                   </Button>
@@ -2054,7 +2055,7 @@ export function OfficePanel() {
                   <Button
                     key={`mini-worker-${worker.agent.id}`}
                     variant="ghost"
-                    className={`absolute w-2.5 h-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 ${hashColor(worker.agent.name)} border border-black/40 h-auto p-0 min-w-0 hover:bg-transparent`}
+                    className={`absolute w-2.5 h-2.5 rounded-full -translate-x-1/2 -translate-y-1/2 ${getAgentVisuals(worker.agent.name).bgClass} border border-black/40 h-auto p-0 min-w-0 hover:bg-transparent`}
                     style={{ left: `${worker.x}%`, top: `${worker.y}%` }}
                     onClick={(event) => {
                       event.stopPropagation()
@@ -2188,7 +2189,7 @@ export function OfficePanel() {
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all hover:scale-[1.02] ${statusGlow[agent.status]}`}
                     style={{ background: 'var(--card)' }}
                   >
-                    <div className={`w-8 h-8 rounded-full ${hashColor(agent.name)} flex items-center justify-center text-white font-bold text-xs`}>
+                    <div className={`w-8 h-8 rounded-full ${getAgentVisuals(agent.name).bgClass} flex items-center justify-center text-white font-bold text-xs`}>
                       {getInitials(agent.name)}
                     </div>
                     <div>
@@ -2211,7 +2212,7 @@ export function OfficePanel() {
           <div className="bg-card border border-border rounded-lg max-w-sm w-full p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-14 h-14 rounded-full ${hashColor(selectedAgent.name)} flex items-center justify-center text-white font-bold text-lg ring-2 ring-offset-2 ring-offset-card ${selectedAgent.status === 'busy' ? 'ring-yellow-500' : selectedAgent.status === 'idle' ? 'ring-green-500' : selectedAgent.status === 'error' ? 'ring-red-500' : 'ring-gray-600'}`}>
+                <div className={`w-14 h-14 rounded-full ${getAgentVisuals(selectedAgent.name).bgClass} flex items-center justify-center text-white font-bold text-lg ring-2 ring-offset-2 ring-offset-card ${selectedAgent.status === 'busy' ? 'ring-yellow-500' : selectedAgent.status === 'idle' ? 'ring-green-500' : selectedAgent.status === 'error' ? 'ring-red-500' : 'ring-gray-600'}`}>
                   {getInitials(selectedAgent.name)}
                 </div>
                 <div>
