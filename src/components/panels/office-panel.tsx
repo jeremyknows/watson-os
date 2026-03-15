@@ -1963,6 +1963,41 @@ export function OfficePanel() {
                     </div>
                   </div>
 
+                  {/* Themed desk props */}
+                  {getAgentVisuals(agent.name).deskProps.map((prop, propIdx) => {
+                    const propStyles: Record<string, { w: string; h: string; bg: string; extra?: string; rounded?: string }> = {
+                      bookshelf:       { w: '4px',  h: '14px', bg: 'bg-amber-700/70',   extra: 'border border-amber-600/40' },
+                      lamp:            { w: '3px',  h: '10px', bg: 'bg-yellow-300/80',   extra: 'shadow-[0_0_6px_rgba(250,204,21,0.5)]' },
+                      'inbox-tray':    { w: '8px',  h: '5px',  bg: 'bg-blue-400/60',     extra: 'border border-blue-300/30' },
+                      'brand-banner':  { w: '16px', h: '3px',  bg: 'bg-pink-400/60',     extra: 'border border-pink-300/30' },
+                      globe:           { w: '6px',  h: '6px',  bg: 'bg-teal-400/60',     rounded: 'rounded-full' },
+                      'map-poster':    { w: '10px', h: '7px',  bg: 'bg-teal-500/50',     extra: 'border border-teal-400/30' },
+                      'tool-rack':     { w: '4px',  h: '14px', bg: 'bg-green-600/60',    extra: 'border border-green-500/30' },
+                      'second-monitor':{ w: '8px',  h: '5px',  bg: 'bg-green-400/50',    extra: 'shadow-[0_0_4px_rgba(74,222,128,0.4)]' },
+                      mushroom:        { w: '5px',  h: '5px',  bg: 'bg-yellow-400/60',   rounded: 'rounded-full' },
+                      'potted-plant':  { w: '6px',  h: '8px',  bg: 'bg-emerald-500/50',  extra: 'border border-emerald-400/30' },
+                      rug:             { w: '20px', h: '3px',  bg: 'bg-indigo-500/40',   extra: 'border border-indigo-400/20' },
+                      'plant-left':    { w: '5px',  h: '7px',  bg: 'bg-emerald-500/50',  extra: 'border border-emerald-400/30' },
+                      'plant-right':   { w: '5px',  h: '7px',  bg: 'bg-emerald-500/50',  extra: 'border border-emerald-400/30' },
+                    }
+                    const style = propStyles[prop]
+                    if (!style) return null
+                    const offsetX = -20 + propIdx * 14
+                    const offsetY = -62 - propIdx * 3
+                    return (
+                      <div
+                        key={`${agent.id}-prop-${propIdx}`}
+                        className={`absolute pointer-events-none ${style.bg} ${style.rounded || 'rounded-sm'} ${style.extra || ''}`}
+                        style={{
+                          left: `calc(${x}% + ${offsetX}px)`,
+                          top: `calc(${y}% + ${offsetY}px)`,
+                          width: style.w,
+                          height: style.h,
+                        }}
+                      />
+                    )
+                  })}
+
                   <Button
                     variant="ghost"
                     onClick={() => setSelectedAgent(agent)}
