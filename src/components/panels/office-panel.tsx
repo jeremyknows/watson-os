@@ -478,6 +478,7 @@ export function OfficePanel() {
   const [showFlightDeckModal, setShowFlightDeckModal] = useState(false)
   const [flightDeckDownloadUrl, setFlightDeckDownloadUrl] = useState('https://flightdeck.example.com/download')
   const [flightDeckLaunching, setFlightDeckLaunching] = useState(false)
+  const [wakeLoading, setWakeLoading] = useState(false)
   const [launchToast, setLaunchToast] = useState<LaunchToast | null>(null)
   const [selectedHotspot, setSelectedHotspot] = useState<OfficeHotspot | null>(null)
   const [agentActionOverrides, setAgentActionOverrides] = useState<Map<number, OfficeAction>>(new Map())
@@ -1272,6 +1273,22 @@ export function OfficePanel() {
     }
   }, [])
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+      const num = Number(e.key)
+      if (num >= 1 && num <= 8) {
+        const idx = num - 1
+        if (idx < visibleDisplayAgents.length) {
+          setSelectedAgent(visibleDisplayAgents[idx])
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [visibleDisplayAgents])
+
   const showLaunchToast = (toast: LaunchToast) => {
     setLaunchToast(toast)
     if (launchToastTimerRef.current) {
@@ -1316,6 +1333,28 @@ export function OfficePanel() {
     }
     pushOfficeEvent({ kind: 'action', severity: 'warn', message: `${agent.name} requested a break.` })
   }, [enqueueMovement, pushOfficeEvent])
+
+  const wakeAgent = useCallback(async (agent: Agent) => {
+    setWakeLoading(true)
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(String(agent.id))}/wake`, {
+        method: 'POST',
+      })
+      if (res.ok) {
+        pushOfficeEvent({ kind: 'action', severity: 'good', message: `${agent.name} wake signal sent.` })
+      } else {
+        pushOfficeEvent({ kind: 'action', severity: 'warn', message: `${agent.name} wake failed (${res.status}).` })
+      }
+    } catch {
+      pushOfficeEvent({ kind: 'action', severity: 'warn', message: `${agent.name} wake request error.` })
+    } finally {
+      setWakeLoading(false)
+    }
+  }, [pushOfficeEvent])
+
+  const navigateToPanel = useCallback((panel: string, query?: string) => {
+    window.location.href = query ? `/${panel}?${query}` : `/${panel}`
+  }, [])
 
   const openFlightDeck = async (agent: Agent) => {
     setFlightDeckLaunching(true)
@@ -2345,7 +2384,39 @@ export function OfficePanel() {
               )}
 
               <div className="pt-1">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Quick Actions</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Operations</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => wakeAgent(selectedAgent)}
+                    disabled={wakeLoading || !selectedAgent.session_key}
+                    className="text-[11px]"
+                  >
+                    {wakeLoading ? 'Waking...' : 'Wake'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigateToPanel('chat', selectedAgent.session_key ? `agent=${encodeURIComponent(selectedAgent.session_key)}` : undefined)}
+                    disabled={!selectedAgent.session_key}
+                    className="text-[11px]"
+                  >
+                    Session
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigateToPanel('tasks')}
+                    className="text-[11px]"
+                  >
+                    Tasks
+                  </Button>
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Office Actions</div>
                 <div className="grid grid-cols-3 gap-1.5">
                   <Button
                     variant="outline"
